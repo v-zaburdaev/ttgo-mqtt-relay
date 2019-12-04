@@ -115,9 +115,12 @@ const char* heaterGetTopic = "heater/getEna";
 const char* heaterSetTopic = "heater/setEna";
 const char* heaterTimerTopic = "heater/getTimer";
 const char* heaterSetTimerTopic = "heater/setTimer";
+const char* refreshTopic = "refresh/all";
 int heaterStatus=0;
 int heaterTimer=0;
 int heaterTimerDefault=60;
+int restTime=60;
+int restTimeDefault=60;
 
 
 void modemInit(){
