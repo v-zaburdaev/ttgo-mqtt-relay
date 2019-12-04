@@ -1,3 +1,7 @@
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <Wire.h>
+
 /**************************************************************
  *
  * This sketch connects to a website and downloads a page.
@@ -22,6 +26,8 @@ const char simPIN[]   = ""; // SIM card PIN code, if any
 #define MODEM_RX             26
 #define I2C_SDA              21
 #define I2C_SCL              22
+#define DS18B20_Pin          12
+#define HEATER_Pin           14
 
 // Set serial for debug console (to the Serial Monitor, default speed 115200)
 #define SerialMon Serial
@@ -36,10 +42,21 @@ const char simPIN[]   = ""; // SIM card PIN code, if any
 //#define TINY_GSM_DEBUG SerialMon
 //#define DUMP_AT_COMMANDS
 
-#include <Wire.h>
 #include <TinyGsmClient.h>
 #include <PubSubClient.h>
 #include "utilities.h"
+
+
+// GPIO where the DS18B20 is connected to
+const int oneWireBus = DS18B20_Pin;     
+
+// Setup a oneWire instance to communicate with any OneWire devices
+OneWire oneWire(oneWireBus);
+
+// Pass our oneWire reference to Dallas Temperature sensor 
+DallasTemperature sensors(&oneWire);
+int numberOfDevices = 0;
+DeviceAddress tempDeviceAddress; 
 
 #ifdef DUMP_AT_COMMANDS
   #include <StreamDebugger.h>
@@ -245,7 +262,29 @@ void mqttPubAll(){
     mqttPubAll();
   }
   
+
+  void getTemperature(){
+    sensors.requestTemperatures(); // Send the command to get temperatures
   
+    // Loop through each device, print out temperature data
+    for(int i=0;i<numberOfDevices; i++){
+      // Search the wire for address
+      if(sensors.getAddress(tempDeviceAddress, i)){
+        // Output the device ID
+        SerialMon.print("Temperature for device: ");
+        SerialMon.println(i,DEC);
+        Serial.print(" with address: ");
+        printAddress(tempDeviceAddress);
+        // Print the data
+        float tempC = sensors.getTempC(tempDeviceAddress);
+        SerialMon.print("Temp C: ");
+        SerialMon.print(tempC);
+        SerialMon.print(" Temp F: ");
+        SerialMon.println(DallasTemperature::toFahrenheit(tempC)); // Converts tempC to Fahrenheit
+      }
+    }
+    
+    }
 
 void setup() {
   // Set console baud rate
@@ -258,11 +297,24 @@ void setup() {
   SerialMon.println(String("IP5306 KeepOn ") + (isOk ? "OK" : "FAIL"));
   modemInit();
   timerInit();
+    // Start the DS18B20 sensor
+  sensors.begin();
+  numberOfDevices = sensors.getDeviceCount();
+  SerialMon.print("Locating devices...");
+  SerialMon.print("Found ");
+  SerialMon.print(numberOfDevices, DEC);
+  SerialMon.println(" devices.");
+
   
 }
 
 
-
+void printAddress(DeviceAddress deviceAddress) {
+  for (uint8_t i = 0; i < 8; i++){
+    if (deviceAddress[i] < 16) Serial.print("0");
+      Serial.print(deviceAddress[i], HEX);
+  }
+}
 
 void loop() {
   if(mode==0){
