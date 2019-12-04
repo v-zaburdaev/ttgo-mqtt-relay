@@ -26,8 +26,8 @@ const char simPIN[]   = ""; // SIM card PIN code, if any
 #define MODEM_RX             26
 #define I2C_SDA              21
 #define I2C_SCL              22
-#define DS18B20_Pin          12
-#define HEATER_Pin           14
+#define DS18B20_Pin          14
+#define HEATER_Pin           15
 
 // Set serial for debug console (to the Serial Monitor, default speed 115200)
 #define SerialMon Serial
@@ -115,7 +115,7 @@ const char* heaterGetTopic = "heater/getEna";
 const char* heaterSetTopic = "heater/setEna";
 const char* heaterTimerTopic = "heater/getTimer";
 const char* heaterSetTimerTopic = "heater/setTimer";
-const char* refreshTopic = "refresh/all";
+const char* refreshTopicAll = "refresh/all";
 int heaterStatus=0;
 int heaterTimer=0;
 int heaterTimerDefault=60;
@@ -221,6 +221,7 @@ boolean mqttConnect() {
 
 void mqttPubAll(){
   if(mqtt.connected()){
+      getTemperature();
       mqtt.publish("refresh/any", "0");
       mqtt.publish(topicLedStatus, ledStatus ? "1" : "0");
       mqtt.publish(heaterGetTopic, heaterStatus? "1" : "0");
@@ -359,6 +360,7 @@ void loop() {
         mode=5;
       }
     if(mode==5){
+      
         if (!mqtt.connected()) {
         SerialMon.println("=== MQTT NOT CONNECTED ===");
         // Reconnect every 10 seconds
@@ -367,7 +369,9 @@ void loop() {
           lastReconnectAttempt = t;
           if (mqttConnect()) {
             lastReconnectAttempt = 0;
-          }
+          } else {
+            mode=0;
+            }
         }
         delay(100);
         return;
