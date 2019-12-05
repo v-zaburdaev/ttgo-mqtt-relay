@@ -221,7 +221,7 @@ boolean mqttConnect() {
 
 void mqttPubAll(){
   if(mqtt.connected()){
-      getTemperature();
+      
       mqtt.publish("refresh/any", "0");
       mqtt.publish(topicLedStatus, ledStatus ? "1" : "0");
       mqtt.publish(heaterGetTopic, heaterStatus? "1" : "0");
@@ -234,6 +234,8 @@ void mqttPubAll(){
         itoa(heaterTimerDefault, buf, 10);
         mqtt.publish(heaterTimerTopic, buf);
       }
+      getTemperature();
+
       
     } else {
       mode=1;
@@ -277,18 +279,35 @@ void mqttPubAll(){
         // Output the device ID
         SerialMon.print("Temperature for device: ");
         SerialMon.println(i,DEC);
-        Serial.print(" with address: ");
-        printAddress(tempDeviceAddress);
-        // Print the data
         float tempC = sensors.getTempC(tempDeviceAddress);
         SerialMon.print("Temp C: ");
+        char data[8];
+        char t[5];
+        sprintf(data, "%.1f",tempC);
+        sprintf(t, "t%d",i);
+        mqtt.publish(t, data);
+
         SerialMon.print(tempC);
-        SerialMon.print(" Temp F: ");
-        SerialMon.println(DallasTemperature::toFahrenheit(tempC)); // Converts tempC to Fahrenheit
       }
     }
     
     }
+char* printAddress(DeviceAddress deviceAddress) {
+  char ret[64];
+  String r="";
+  for (uint8_t i = 0; i < 8; i++){
+    if (deviceAddress[i] < 16) Serial.print("0");
+      ////SerialMon.print(deviceAddress[i], HEX);
+      char buf[2];
+      sprintf(buf, "%X", deviceAddress[i]);
+      r=r+buf;
+  SerialMon.println(r);    
+  }
+  
+//  r.toCharArray(ret, 32);
+//  SerialMon.println(ret);
+  return ret;
+}
 
 void setup() {
   // Set console baud rate
@@ -313,12 +332,6 @@ void setup() {
 }
 
 
-void printAddress(DeviceAddress deviceAddress) {
-  for (uint8_t i = 0; i < 8; i++){
-    if (deviceAddress[i] < 16) Serial.print("0");
-      Serial.print(deviceAddress[i], HEX);
-  }
-}
 
 void loop() {
   if(mode==0){
@@ -378,7 +391,7 @@ void loop() {
       }
       if(seconds<=0){
         mqttPubAll();
-        seconds=10;
+        seconds=60;
         
         }
       
