@@ -28,6 +28,16 @@ const char simPIN[]   = ""; // SIM card PIN code, if any
 #define I2C_SCL              22
 #define DS18B20_Pin          14
 #define HEATER_Pin           15
+#define LED                  13
+//#define SENSOR_VP_GPIO       36
+//#define SENSOR_VN_GPIO       39 // LED3
+#define BATT_LVL             35
+
+  struct {
+    char tempBufferData[6];
+    char t[2];
+  } temperature[4];
+
 
 // Set serial for debug console (to the Serial Monitor, default speed 115200)
 #define SerialMon Serial
@@ -39,8 +49,8 @@ const char simPIN[]   = ""; // SIM card PIN code, if any
 #define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
 
 // Define the serial console for debug prints, if needed
-//#define TINY_GSM_DEBUG SerialMon
-//#define DUMP_AT_COMMANDS
+#define TINY_GSM_DEBUG SerialMon
+#define DUMP_AT_COMMANDS
 
 #include <TinyGsmClient.h>
 #include <PubSubClient.h>
@@ -92,22 +102,29 @@ TinyGsmClient client(modem);
 PubSubClient mqtt(client);
 
 // MQTT details
-const char* broker = "tailor.cloudmqtt.com";
-const char* mqttuser = "iobfumxq";
-const char* mqttpass = "Fxzp7UhINe38";
-int mqttport = 14605;
+//const char* broker = "tailor.cloudmqtt.com";
+//const char* mqttuser = "iobfumxq";
+//const char* mqttpass = "Fxzp7UhINe38";
+//int mqttport = 14605;
+
+const char* broker = "95.79.40.140";
+const char* mqttuser = "garage";
+const char* mqttpass = "123345567";
+int mqttport = 1883;
 
 
 const char* topicLed = "GsmClientTest/led";
 const char* topicInit = "GsmClientTest/init";
 const char* topicLedStatus = "GsmClientTest/ledStatus";
 
+bool mqttSend=false;
 
 const int  port = 80;
 int mode=0;
-int seconds=0;
 int minute=60;
 int ledStatus = LOW;
+int8_t batteryLvl=0;
+int batteryAdcLvl=0;
 long lastReconnectAttempt = 0;
 
 const char* refreshTopic = "refresh/all";
@@ -121,6 +138,7 @@ int heaterTimer=0;
 int heaterTimerDefault=60;
 int restTime=60;
 int restTimeDefault=60;
+
 
 
 void modemInit(){
@@ -212,34 +230,49 @@ boolean mqttConnect() {
   }
   SerialMon.println(" success");
   mqtt.publish(topicInit, "GsmClientTest started");
-  mqtt.subscribe(topicLed);
   mqtt.subscribe(refreshTopic);
   mqtt.subscribe(heaterSetTopic);
   mqtt.subscribe(heaterSetTimerTopic);
   return mqtt.connected();
 }
-
+char buf[12];
 void mqttPubAll(){
   if(mqtt.connected()){
-      
+      mqttSend=true;
       mqtt.publish("refresh/any", "0");
-      mqtt.publish(topicLedStatus, ledStatus ? "1" : "0");
       mqtt.publish(heaterGetTopic, heaterStatus? "1" : "0");
       if(heaterStatus){
-        char buf[8];
         itoa(heaterTimer, buf, 10);
         mqtt.publish(heaterTimerTopic, buf);
         } else {
-          char buf[8];
         itoa(heaterTimerDefault, buf, 10);
         mqtt.publish(heaterTimerTopic, buf);
       }
-      getTemperature();
-
       
-    } else {
-      mode=1;
-    }
+
+      mqtt.publish(temperature[0].t, temperature[0].tempBufferData);
+             
+      itoa(batteryLvl, buf, 10);
+
+      mqtt.publish("battery/level", buf);
+      
+      if(isCharging()){
+        mqtt.publish("battery/charging", "1");
+      } else {
+        mqtt.publish("battery/charging", "0");
+      }
+
+      batteryAdcLvl = analogRead(BATT_LVL);
+      float volt = batteryAdcLvl/547.002398082;
+      dtostrf(volt, 0, 2, buf);
+      mqtt.publish("battery/adclvl", buf);
+      // 4.17=2281
+
+      mqttSend=false;
+    } 
+//    else {
+//      mode=3;
+//    }
     
     
 
@@ -256,6 +289,8 @@ void mqttPubAll(){
     mqttPubAll();
     }
   void tickHeater(){
+    getTemperature();
+    batteryLvl=getBatteryLevel();
     if(heaterStatus==1){
       SerialMon.println("tick heater");
       heaterTimer--;
@@ -264,6 +299,7 @@ void mqttPubAll(){
         }
       mqttPubAll();
       }
+      
     }
   void stopHeater(){
     heaterStatus=0;
@@ -273,7 +309,7 @@ void mqttPubAll(){
     digitalWrite(HEATER_Pin,HIGH);
     mqttPubAll();
   }
-  
+
 
   void getTemperature(){
     sensors.requestTemperatures(); // Send the command to get temperatures
@@ -287,11 +323,8 @@ void mqttPubAll(){
         SerialMon.println(i,DEC);
         float tempC = sensors.getTempC(tempDeviceAddress);
         SerialMon.print("Temp C: ");
-        char data[8];
-        char t[5];
-        sprintf(data, "%.1f",tempC);
-        sprintf(t, "t%d",i);
-        mqtt.publish(t, data);
+        sprintf(temperature[i].tempBufferData, "%.1f",tempC);
+        sprintf(temperature[i].t, "t%d",i);
 
         SerialMon.print(tempC);
       }
@@ -321,22 +354,38 @@ void setup() {
   delay(10);
 
   pinMode(HEATER_Pin, OUTPUT_OPEN_DRAIN);
+  //pinMode(BATT_LVL, ANALOG);
   digitalWrite(HEATER_Pin,HIGH);
+  pinMode(LED, OUTPUT);
 
+  int potValue = analogRead(BATT_LVL);
+  SerialMon.println(potValue);
+      
   // Keep power when running from battery
   Wire.begin(I2C_SDA, I2C_SCL);
   bool   isOk = setPowerBoostKeepOn(1);
   SerialMon.println(String("IP5306 KeepOn ") + (isOk ? "OK" : "FAIL"));
+
+  batteryLvl=getBatteryLevel();
+  if(isChargeFull()){
+    SerialMon.println("Battery full charged.");
+    }
+
+    if(isCharging()){
+      SerialMon.println("Battery charging.");
+      }
+  
   modemInit();
   timerInit();
     // Start the DS18B20 sensor
   sensors.begin();
   numberOfDevices = sensors.getDeviceCount();
+  
   SerialMon.print("Locating devices...");
   SerialMon.print("Found ");
   SerialMon.print(numberOfDevices, DEC);
   SerialMon.println(" devices.");
-
+  getTemperature();
   
 }
 
@@ -362,7 +411,7 @@ void loop() {
       if (modem.isNetworkConnected()) {
         SerialMon.println("Network connected");
         mode=3;
-      }
+      } 
     }
   if(mode==3){
     SerialMon.print(F("Connecting to APN: "));
@@ -370,7 +419,7 @@ void loop() {
     if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
       SerialMon.println(" fail");
       delay(10000);
-      mode=0;
+      mode=2;
       return;
     }
     SerialMon.println(" OK");
@@ -385,6 +434,7 @@ void loop() {
       
         if (!mqtt.connected()) {
         SerialMon.println("=== MQTT NOT CONNECTED ===");
+        digitalWrite(LED, LOW);
         // Reconnect every 10 seconds
         unsigned long t = millis();
         if (t - lastReconnectAttempt > 10000L) {
@@ -395,17 +445,14 @@ void loop() {
             mode=3;
             }
         }
-        delay(100);
         return;
       }
-      if(seconds<=0){
-        mqttPubAll();
-        seconds=60;
-        
-        }
+      digitalWrite(LED, HIGH);
+      
       
     
       mqtt.loop();
+      
     }
 
     
@@ -415,13 +462,14 @@ void loop() {
     interruptCounter--;
     //interruptCounter=0;
     portEXIT_CRITICAL(&timerMux);
-    seconds--;
+    
     minute--;
     if(minute<=0){
       minute=60;
       tickHeater();
+      mqttPubAll();
       }
     
   }
-
+  delay(150);
 }
