@@ -128,7 +128,7 @@ void modemInit(){
     pinMode(MODEM_PWKEY, OUTPUT);
     pinMode(MODEM_RST, OUTPUT);
     pinMode(MODEM_POWER_ON, OUTPUT);
-  
+
     digitalWrite(MODEM_PWKEY, LOW);
     digitalWrite(MODEM_RST, HIGH);
     digitalWrite(MODEM_POWER_ON, HIGH);
@@ -250,6 +250,9 @@ void mqttPubAll(){
     heaterTimer=heaterTimerDefault;
     SerialMon.print("startHeater timer=");
     SerialMon.println(heaterTimer);
+    digitalWrite(HEATER_Pin,LOW);
+    delay(250);
+    digitalWrite(HEATER_Pin,HIGH);
     mqttPubAll();
     }
   void tickHeater(){
@@ -265,6 +268,9 @@ void mqttPubAll(){
   void stopHeater(){
     heaterStatus=0;
     SerialMon.println("stopHeater");
+    digitalWrite(HEATER_Pin,LOW);
+    delay(2500);
+    digitalWrite(HEATER_Pin,HIGH);
     mqttPubAll();
   }
   
@@ -313,6 +319,9 @@ void setup() {
   // Set console baud rate
   SerialMon.begin(115200);
   delay(10);
+
+  pinMode(HEATER_Pin, OUTPUT_OPEN_DRAIN);
+  digitalWrite(HEATER_Pin,HIGH);
 
   // Keep power when running from battery
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -383,7 +392,7 @@ void loop() {
           if (mqttConnect()) {
             lastReconnectAttempt = 0;
           } else {
-            mode=0;
+            mode=3;
             }
         }
         delay(100);
