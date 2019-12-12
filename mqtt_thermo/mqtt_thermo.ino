@@ -34,8 +34,8 @@ const char simPIN[]   = ""; // SIM card PIN code, if any
 #define BATT_LVL             35
 
   struct {
-    char tempBufferData[6];
-    char t[2];
+    char tempBufferData[8]="";
+    char t[6]="";
   } temperature[4];
 
 
@@ -49,8 +49,8 @@ const char simPIN[]   = ""; // SIM card PIN code, if any
 #define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
 
 // Define the serial console for debug prints, if needed
-#define TINY_GSM_DEBUG SerialMon
-#define DUMP_AT_COMMANDS
+//#define TINY_GSM_DEBUG SerialMon
+//#define DUMP_AT_COMMANDS
 
 #include <TinyGsmClient.h>
 #include <PubSubClient.h>
@@ -113,15 +113,17 @@ const char* mqttpass = "123345567";
 int mqttport = 1883;
 
 
-const char* topicLed = "GsmClientTest/led";
-const char* topicInit = "GsmClientTest/init";
-const char* topicLedStatus = "GsmClientTest/ledStatus";
+//const char* topicLed = "GsmClientTest/led";
+//const char* topicInit = "GsmClientTest/init";
+//const char* topicLedStatus = "GsmClientTest/ledStatus";
 
 bool mqttSend=false;
 
 const int  port = 80;
 int mode=0;
 int minute=60;
+int hour=60;
+int uptime=0;
 int ledStatus = LOW;
 int8_t batteryLvl=0;
 int batteryAdcLvl=0;
@@ -188,9 +190,9 @@ void mqttCallback(char* topic, unsigned char* payload, unsigned int len) {
   
   
   // Only proceed if incoming message's topic matches
-  if (String(topic) == topicLed) {
-    ledStatus = !ledStatus;
-  }
+//  if (String(topic) == topicLed) {
+//    ledStatus = !ledStatus;
+//  }
   if (String(topic) == heaterSetTopic) {
     if(p=="1"){
         SerialMon.println("startHeater");
@@ -229,7 +231,7 @@ boolean mqttConnect() {
     return false;
   }
   SerialMon.println(" success");
-  mqtt.publish(topicInit, "GsmClientTest started");
+//  mqtt.publish(topicInit, "GsmClientTest started");
   mqtt.subscribe(refreshTopic);
   mqtt.subscribe(heaterSetTopic);
   mqtt.subscribe(heaterSetTimerTopic);
@@ -248,12 +250,19 @@ void mqttPubAll(){
         itoa(heaterTimerDefault, buf, 10);
         mqtt.publish(heaterTimerTopic, buf);
       }
-      
 
-      mqtt.publish(temperature[0].t, temperature[0].tempBufferData);
+      if(temperature!=NULL){
+        if(temperature[0].t!=NULL && temperature[0].tempBufferData!=NULL){
+//            SerialMon.print("PUB ");
+//            SerialMon.print(temperature[0].t);
+//            SerialMon.print(":");
+//            SerialMon.print(temperature[0].tempBufferData);
+            mqtt.publish(temperature[0].t, temperature[0].tempBufferData, 4);
+          }
+        }
+ 
              
       itoa(batteryLvl, buf, 10);
-
       mqtt.publish("battery/level", buf);
       
       if(isCharging()){
@@ -267,14 +276,11 @@ void mqttPubAll(){
       dtostrf(volt, 0, 2, buf);
       mqtt.publish("battery/adclvl", buf);
       // 4.17=2281
+      itoa(uptime, buf, 10);
+      mqtt.publish("device/uptime", buf);
 
       mqttSend=false;
     } 
-//    else {
-//      mode=3;
-//    }
-    
-    
 
   }
 
@@ -292,7 +298,6 @@ void mqttPubAll(){
     getTemperature();
     batteryLvl=getBatteryLevel();
     if(heaterStatus==1){
-      SerialMon.println("tick heater");
       heaterTimer--;
       if(heaterTimer<=0){
         stopHeater();
@@ -466,6 +471,11 @@ void loop() {
     minute--;
     if(minute<=0){
       minute=60;
+      hour--;
+      if(hour<=0){
+        hour=60;
+        uptime++;
+      }
       tickHeater();
       mqttPubAll();
       }
